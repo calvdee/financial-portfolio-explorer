@@ -1,0 +1,4 @@
+Collecting statsmodels
+  Downloading statsmodels-0.12.2.tar.gz (17.5 MB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'error'
