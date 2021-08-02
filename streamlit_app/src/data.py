@@ -80,6 +80,19 @@ def make_prices_df(assets: List[str]) -> pd.DataFrame:
         value_name = 'unit_price_usd',
         var_name = 'asset'
       )
+      # Sort for the following groupby to work
+      .sort_values(by = 'date')
+      # Now we need to make sure we don't have any gaps resulting
+      # from different holidays in different markets. For example,
+      # Memorial Day in the US (May 31) results in no price records for
+      # US-based equities but there are price records for TSX-based
+      # assets.
+      .assign(unit_price_usd = lambda df: 
+        df
+          .groupby('asset')
+          ['unit_price_usd']
+          .transform(lambda grp: grp.ffill())
+      )  
       .rename(columns = {'date': 'price_date'})
   )
 
@@ -107,7 +120,7 @@ def make_order_value_snapshot_df(
       )
       # Only include records where the `price_date` is on or after the
       # `order_date`. This would be implemented as a range join in SQL.
-      .query('order_date <= price_date')
+      .query('price_date >= order_date')
       .assign(
         order_value_usd = lambda df: df['order_units'] * df['unit_price_usd']
       )
@@ -165,56 +178,3 @@ def make_portfolio_value_snapshot_df(
 
   return portfolio_value_snapshot_df
   
-@dataclass
-class PortfolioSummary:
-  dollar_cost: float
-  dollar_value: float
-  dollar_return: float = field(init = False)
-  percent_return: float = field(init = False)
-
-  def __post_init__(self):
-    self.dollar_return = self.dollar_value - self.dollar_cost
-    self.percent_return = self.dollar_value / self.dollar_cost - 1
-
-
-class PortfolioData(object):
-  """
-  A portfolio defined by a set of assets
-  """
-  def __init__(self, orders_df: pd.DataFrame, assets: List[str] = None):
-    portfolio_assets = assets or list(orders_df['asset'].unique())
-    self.assets = portfolio_assets
-
-    prices_df = make_prices_df(self.assets)
-
-    self.order_snapshot = make_order_value_snapshot_df(
-      prices_df,
-      orders_df
-    ).query('asset in @portfolio_assets').set_index('order_date').sort_index()
-    
-    self.asset_snapshot = (
-      make_asset_value_snapshot_df(self.order_snapshot)
-        .set_index('snapshot_date')
-        .sort_index()
-    )
-    
-    self.portfolio_snapshot = (
-      make_portfolio_value_snapshot_df(self.asset_snapshot)
-        .set_index('snapshot_date')
-        .sort_index()
-    )
-  
-  def summarize(self) -> PortfolioSummary:
-    portfolio_state = (
-      self.portfolio_snapshot
-        .sort_index()
-        .tail(1)
-    )
-
-    portfolio_cost = portfolio_state['portfolio_cost_usd'].values[0]
-    portfolio_value = portfolio_state['portfolio_value_usd'].values[0]
-
-    return PortfolioSummary(
-      dollar_cost = portfolio_cost,
-      dollar_value = portfolio_value
-    )
