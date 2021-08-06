@@ -1,29 +1,48 @@
 from datetime import datetime
 from typing import List, Dict
 from dataclasses import dataclass, field
+from airtable import Airtable
+from os import environ
+
 import pandas as pd
 import yfinance as yf
 
 ix = pd.IndexSlice
 
-def load_orders(path: str) -> pd.DataFrame:
-  """
-  Loads order data
-
-  Parameters
-  ----------
-  path : str
-      The path to the orders CSV file
-
-  Returns
-  -------
-  pd.DataFrame
-      A dataframe of orders indexed by an auto-incrementing order ID
-  """
+def load_orders_from_firebase(
+  api_key, db_id: str, table_name: str,
+  is_spy: bool = False
+) -> Airtable:
+  airtable = Airtable(db_id, table_name, api_key)
+  records = list(map(lambda record: record['fields'], airtable.get_all()))
   orders_df = (
-    pd
-      .read_csv(path, parse_dates = ['order_date'])
+    pd.DataFrame.from_records(records)
       .reset_index()
+      .rename(columns = {
+        'index': 'order_id',
+        'Order Date': 'order_date',
+        'Asset': 'asset',
+        'Unit Cost (USD)': 'unit_cost_usd',
+        'Order Cost (USD)': 'order_cost_usd',
+        'Order Units': 'order_units'
+      })
+      .assign(
+        order_id = lambda df: df['order_id']+1,
+        order_date = lambda df: pd.to_datetime(df['order_date']).dt.date,
+        order_cost_computed = lambda df: df['unit_cost_usd']*df['order_units']
+      )
+  )
+
+  if is_spy:
+    orders_df = orders_df.assign(
+      order_cost_usd = lambda df: df['order_cost_computed']
+    )
+
+  return orders_df
+
+def load_orders(path: str) -> pd.DataFrame:
+  orders_df = (
+    load_orders()
       .rename(columns = {'index': 'order_id'})
       .assign(
         order_id = lambda df: df['order_id']+1,

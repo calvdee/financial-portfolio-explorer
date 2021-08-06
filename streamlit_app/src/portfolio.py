@@ -8,7 +8,7 @@ from typing import List
 class PortfolioSummary:
   dollar_cost: float
   dollar_value: float
-  annualized_return: float
+  # annualized_return: float
   dollar_return: float = field(init = False)
   percent_return: float = field(init = False)
 
